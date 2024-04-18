@@ -1,3 +1,6 @@
-gymnasium[classic_control]==0.29.1
+swig==4.2.1
+gymnasium[all]==0.29.1
+gymnasium[accept-rom-license]==0.29.1
 matplotlib==3.8.4
-torch==2.2.2
+torch
+torchvision
