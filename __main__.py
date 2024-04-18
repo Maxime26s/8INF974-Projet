@@ -7,11 +7,11 @@ else:
     print("CUDA is not available. Using CPU.")
 
 if __name__ == "__main__":
-    game = "ALE/Pong-v5"
-    # game = "CartPole-v1"
+    game = "PongNoFrameskip-v4"
+    game = "CartPole-v1"
 
     render_mode = None
     render_mode = "human"
 
     train_dqn(game=game, render_mode=render_mode)
-    test_dqn("trained_model.pth", game=game, num_episodes=100)
+    # test_dqn(game, "trained_model.pth", num_episodes=100)

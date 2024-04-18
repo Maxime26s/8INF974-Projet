@@ -93,28 +93,57 @@ def optimize_model(memory, policy_net, target_net, optimizer):
     optimizer.step()
 
 
-def train_dqn(game, render_mode=None):
-    # env = gym.make(game, render_mode=render_mode)
-    env = gym.make("PongNoFrameskip-v4", render_mode=render_mode)
-    env = gym.wrappers.GrayScaleObservation(env)  # Convert observation to grayscale
-    env = gym.wrappers.ResizeObservation(env, shape=84)  # Resize frame to 84x84
-    env = gym.wrappers.TransformObservation(
-        env, lambda obs: obs / 255.0
-    )  # Normalize pixel values
-    env = gym.wrappers.FrameStack(env, 4)  # Stack 4 frames together
+def setup_env(game, render_mode=None):
+    env = gym.make(game, render_mode=render_mode)
+    state, _ = env.reset(seed=42)
+    if len(state.shape) > 1:
+        env = gym.wrappers.GrayScaleObservation(env)
+        env = gym.wrappers.ResizeObservation(env, shape=84)
+        env = gym.wrappers.TransformObservation(env, lambda obs: obs / 255.0)
+        env = gym.wrappers.FrameStack(env, 4)
+    return env
 
-    n_actions = env.action_space.n
-    state, info = env.reset(seed=42)
-    n_observations = len(state)
-    print(state.shape)
 
+def setup_model(state, n_actions):
     if len(state.shape) > 1:
         policy_net = ImageDQN(state.shape, n_actions).to(device)
         target_net = ImageDQN(state.shape, n_actions).to(device)
     else:
+        n_observations = len(state)
         policy_net = DQN(n_observations, n_actions).to(device)
         target_net = DQN(n_observations, n_actions).to(device)
+    return policy_net, target_net
 
+
+def perform_action(env, action):
+    observation, reward, terminated, truncated, _ = env.step(action.item())
+    reward = torch.tensor([reward], device=device)
+    done = terminated or truncated
+
+    if terminated:
+        next_state = None
+    else:
+        next_state = convert_to_tensor(observation, device=device)
+
+    return next_state, reward, done
+
+
+def update_target_net(policy_net, target_net):
+    target_net_state_dict = target_net.state_dict()
+    policy_net_state_dict = policy_net.state_dict()
+    for key in policy_net_state_dict:
+        target_net_state_dict[key] = policy_net_state_dict[
+            key
+        ] * TAU + target_net_state_dict[key] * (1 - TAU)
+    target_net.load_state_dict(target_net_state_dict)
+
+
+def train_dqn(game, render_mode=None):
+    env = setup_env(game, render_mode)
+    n_actions = env.action_space.n
+    state, _ = env.reset(seed=42)
+
+    policy_net, target_net = setup_model(state, n_actions)
     target_net.load_state_dict(policy_net.state_dict())
 
     optimizer = optim.AdamW(policy_net.parameters(), lr=LR, amsgrad=True)
@@ -123,77 +152,60 @@ def train_dqn(game, render_mode=None):
     steps_done = 0
     episode_durations = []
 
-    if torch.cuda.is_available():
-        num_episodes = 600
-    else:
-        num_episodes = 50
+    num_episodes = 600 if torch.cuda.is_available() else 50
 
-    for i_episode in range(num_episodes):
-        state, info = env.reset(seed=42)
+    for episode in range(num_episodes):
+        state, _ = env.reset(seed=42)
         state = convert_to_tensor(state, device=device)
 
         for t in count():
             action = select_action(state, policy_net, steps_done, n_actions, env)
             steps_done += 1
-            observation, reward, terminated, truncated, _ = env.step(action.item())
-            reward = torch.tensor([reward], device=device)
-            done = terminated or truncated
-
-            if terminated:
-                next_state = None
-            else:
-                next_state = convert_to_tensor(observation, device=device)
+            next_state, reward, done = perform_action(env, action)
 
             memory.push(state, action, next_state, reward)
 
             state = next_state
 
             optimize_model(memory, policy_net, target_net, optimizer)
-
-            target_net_state_dict = target_net.state_dict()
-            policy_net_state_dict = policy_net.state_dict()
-            for key in policy_net_state_dict:
-                target_net_state_dict[key] = policy_net_state_dict[
-                    key
-                ] * TAU + target_net_state_dict[key] * (1 - TAU)
-            target_net.load_state_dict(target_net_state_dict)
+            update_target_net(policy_net, target_net)
 
             if done:
-                print(f"Episode: {i_episode + 1}")
+                print(f"Episode: {episode + 1}")
 
                 episode_durations.append(t + 1)
                 plot_durations(episode_durations)
                 break
 
-    torch.save(policy_net.state_dict(), "trained_model.pth")
     env.close()
+    torch.save(policy_net.state_dict(), "trained_model.pth")
     print("Complete")
+
     plot_durations(episode_durations, show_result=True)
     plt.ioff()
     plt.show()
 
 
 def test_dqn(model_path, game, num_episodes=10):
-    env = gym.make(game, render_mode="human")
+    env = setup_env(game, "human")
     n_actions = env.action_space.n
-    state, _ = env.reset()
-    n_observations = len(state)
+    state, _ = env.reset(seed=42)
 
-    policy_net = DQN(n_observations, n_actions).to(device)
+    policy_net, _ = setup_model(state, n_actions)
     policy_net.load_state_dict(torch.load(model_path))
 
-    for i_episode in range(num_episodes):
+    for episode in range(num_episodes):
         state, info = env.reset()
-        state = torch.tensor(state, dtype=torch.float32, device=device).unsqueeze(0)
+        state = convert_to_tensor(state, device=device)
+
         total_reward = 0
         for t in count():
             action = select_action_test(state, policy_net)
-            observation, reward, terminated, truncated, _ = env.step(action.item())
-            state = torch.tensor(
-                observation, dtype=torch.float32, device=device
-            ).unsqueeze(0)
-            total_reward += reward
-            if terminated or truncated:
-                print(f"Episode: {i_episode + 1}, Total reward: {total_reward}")
+            state, reward, done = perform_action(env, action)
+
+            total_reward += reward.item()
+
+            if done:
+                print(f"Episode: {episode + 1}, Total reward: {total_reward}")
                 break
     env.close()
