@@ -64,44 +64,22 @@ class DQNAgent:
         transitions = self.memory.sample(batch_size)
         batch = Transition(*zip(*transitions))
 
-        state_batch = torch.cat(batch.state)
-        action_batch = torch.cat(batch.action)
-        reward_batch = torch.cat(batch.reward)
-        next_state_batch = torch.cat(batch.next_state)
+        state_batch = torch.stack(batch.state)
+        action_batch = torch.stack(batch.action)
+        reward_batch = torch.stack(batch.reward)
+        next_state_batch = torch.stack(batch.next_state)
 
-        print("next_state_batch shape:", reward_batch.shape)
-
-        non_final_mask = next_state_batch.sum() != 0
+        non_final_mask = next_state_batch.sum(dim=1) != 0
         non_final_next_states = next_state_batch[non_final_mask]
-
-        print(f"Intended non-final states count: {non_final_mask.sum().item()}")
-        print(f"Actual non-final next states count: {non_final_next_states.size(0)}")
-
-        if non_final_next_states.size(0) != non_final_mask.sum():
-            raise Exception("Non-final states count mismatch!")
 
         state_action_values = self.policy_net(state_batch).gather(1, action_batch)
         next_state_values = torch.zeros(batch_size, device=self.device)
 
-        print(f"Batch size: {batch_size}")
-        print(f"next_state_values shape: {next_state_values.shape}")
-        print(f"non_final_mask shape (True count): {non_final_mask.sum()}")
-        print(
-            f"Shape of target network output: {self.target_net(non_final_next_states).max(1).values.shape}"
-        )
-
-        print(
-            f"Non-final next states shape: {non_final_next_states.shape}"
-        )  # Debugging line
-
         if non_final_next_states.size(0) > 0:
             with torch.no_grad():
-                temp_values = self.target_net(non_final_next_states).max(1).values
-                print(f"Temp values shape: {temp_values.shape}")  # Debugging line
-                if temp_values.shape[0] != non_final_mask.sum():
-                    print("Mismatch detected")
-                    raise ValueError("Shape mismatch in DQN target calculation.")
-                next_state_values[non_final_mask] = temp_values
+                next_state_values[non_final_mask] = (
+                    self.target_net(non_final_next_states).max(1).values
+                )
 
         expected_state_action_values = (next_state_values * self.gamma) + reward_batch
 

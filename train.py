@@ -35,7 +35,7 @@ def convert_to_tensor(data, device):
 
 def setup_env(game, num_envs=4, render_mode=None):
     envs = gym.make_vec(
-        game, num_envs=num_envs, render_mode=render_mode, vectorization_mode="sync"
+        game, num_envs=num_envs, render_mode=render_mode, vectorization_mode="async"
     )
     observation_shape = envs.single_observation_space.shape
 
