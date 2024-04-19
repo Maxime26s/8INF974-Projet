@@ -9,6 +9,8 @@ def main(game, mode, render_mode):
     else:
         print("CUDA is not available. Using CPU.")
 
+    # game = "PongNoFrameskip-v4"
+
     if mode == "train":
         train_dqn(game=game, render_mode=render_mode)
     elif mode == "test":

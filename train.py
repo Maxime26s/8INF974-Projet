@@ -1,7 +1,7 @@
 import torch
 import torch.optim as optim
 import torch.nn as nn
-from dqn_model import DQN, ImageDQN
+from dqn_model import DQN
 from agent import DQNAgent
 from replay import ReplayMemory, Transition
 from utils import plot_durations
@@ -42,12 +42,8 @@ def setup_env(game, render_mode=None):
 
 
 def setup_model(state_shape, n_actions):
-    if len(state_shape) > 1:
-        policy_net = ImageDQN(state_shape, n_actions).to(device)
-        target_net = ImageDQN(state_shape, n_actions).to(device)
-    else:
-        policy_net = DQN(state_shape[0], n_actions).to(device)
-        target_net = DQN(state_shape[0], n_actions).to(device)
+    policy_net = DQN(state_shape, n_actions).to(device)
+    target_net = DQN(state_shape, n_actions).to(device)
     return policy_net, target_net
 
 
