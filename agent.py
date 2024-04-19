@@ -3,7 +3,7 @@ import random
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from replay import Transition, ReplayMemory
+from memory import Transition, ReplayMemory
 
 EPS_START = 0.9
 EPS_END = 0.05
