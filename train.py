@@ -3,7 +3,7 @@ import torch.optim as optim
 import torch.nn as nn
 from dqn_model import DQN
 from agent import DQNAgent
-from replay import ReplayMemory, Transition
+from memory import ReplayMemory, Transition
 from utils import plot_durations
 import math
 import gymnasium as gym
@@ -22,50 +22,65 @@ def convert_to_tensor(data, device):
         data = data.__array__()
     elif isinstance(data, list):
         data = np.array(data)
-    elif isinstance(data, np.ndarray) and data.ndim == 3:
-        data = np.stack(data, axis=0)
+    elif isinstance(data, np.ndarray):
+        # If the data is already a 3D image, just add the batch dimension
+        if data.ndim == 3:  # For image data [C, H, W]
+            data = data[None, :]  # Add batch dimension if needed
+        elif data.ndim == 1:  # For flattened arrays or single-dimensional states
+            data = data.reshape(1, -1)  # Reshape to [1, feature_length]
 
-    return torch.tensor(data, dtype=torch.float32, device=device).unsqueeze(0)
-
-
-def setup_env(game, render_mode=None):
-    env = gym.make(game, render_mode=render_mode)
-    state, _ = env.reset(seed=42)
-
-    if len(state.shape) > 1:
-        env = gym.wrappers.GrayScaleObservation(env)
-        env = gym.wrappers.ResizeObservation(env, shape=84)
-        env = gym.wrappers.TransformObservation(env, lambda obs: obs / 255.0)
-        env = gym.wrappers.FrameStack(env, 4)
-
-    return env
+    # Do not add an extra unsqueeze unless required
+    return torch.tensor(data, dtype=torch.float32, device=device)
 
 
-def setup_model(state_shape, n_actions):
-    policy_net = DQN(state_shape, n_actions).to(device)
-    target_net = DQN(state_shape, n_actions).to(device)
+def setup_env(game, num_envs=4, render_mode=None):
+    envs = gym.make_vec(
+        game, num_envs=num_envs, render_mode=render_mode, vectorization_mode="sync"
+    )
+    observation_shape = envs.single_observation_space.shape
+
+    if len(observation_shape) > 2:
+        envs = gym.wrappers.VectorListWrapper(envs, gym.wrappers.GrayScaleObservation)
+        envs = gym.wrappers.VectorListWrapper(
+            envs, gym.wrappers.ResizeObservation, shape=84
+        )
+        envs = gym.wrappers.VectorListWrapper(
+            envs, gym.wrappers.TransformObservation, lambda obs: obs / 255.0
+        )
+        envs = gym.wrappers.VectorListWrapper(
+            envs, gym.wrappers.FrameStack, num_stack=4
+        )
+
+    return envs
+
+
+def setup_model(observation_shape, n_actions):
+    policy_net = DQN(observation_shape, n_actions).to(device)
+    target_net = DQN(observation_shape, n_actions).to(device)
     return policy_net, target_net
 
 
-def perform_action(env, action):
-    observation, reward, terminated, truncated, _ = env.step(action.item())
-    reward = torch.tensor([reward], device=device)
-    done = terminated or truncated
+def perform_action(envs, actions):
+    actions = actions.cpu().numpy().flatten()
 
-    if terminated:
-        next_state = None
-    else:
-        next_state = convert_to_tensor(observation, device=device)
+    observations, rewards, terminated, truncated, _ = envs.step(actions)
+    next_observations = convert_to_tensor(observations, device=device)
+    rewards = torch.tensor(rewards, device=device).unsqueeze(1)
+    done = torch.tensor(terminated | truncated, dtype=torch.bool, device=device)
 
-    return next_state, reward, done
+    for i in range(len(done)):
+        if done[i]:
+            next_observations[i] = torch.zeros_like(next_observations[i])
+
+    return next_observations, rewards, done
 
 
-def train_dqn(game, render_mode=None):
-    env = setup_env(game, render_mode)
-    n_actions = env.action_space.n
-    state, _ = env.reset(seed=42)
+def train_dqn(game, num_envs=2, render_mode=None):
+    envs = setup_env(game, num_envs, render_mode)
+    observation_shape = envs.single_observation_space.shape
+    n_actions = envs.single_action_space.n
 
-    policy_net, target_net = setup_model(state.shape, n_actions)
+    policy_net, target_net = setup_model(observation_shape, n_actions)
     target_net.load_state_dict(policy_net.state_dict())
 
     agent = DQNAgent(policy_net, target_net, n_actions, device)
@@ -75,28 +90,31 @@ def train_dqn(game, render_mode=None):
     num_episodes = 600 if torch.cuda.is_available() else 50
 
     for episode in range(num_episodes):
-        state, _ = env.reset(seed=42)
-        state = convert_to_tensor(state, device=device)
+        observations, _ = envs.reset(seed=42)
+        observations = convert_to_tensor(observations, device=device)
 
         for frame in count():
-            action = agent.act(state)
-            next_state, reward, done = perform_action(env, action)
+            actions = agent.act(observations)
+            next_observations, rewards, done = perform_action(envs, actions)
 
-            agent.remember(state, action, next_state, reward)
+            for i in range(envs.num_envs):
+                agent.remember(
+                    observations[i], actions[i], next_observations[i], rewards[i]
+                )
 
-            state = next_state
+            observations = next_observations
 
             agent.replay(BATCH_SIZE)
             agent.update_target()
 
-            if done:
+            if done.all():
                 print(f"Episode: {episode + 1}")
 
                 episode_durations.append(frame + 1)
                 plot_durations(episode_durations)
                 break
 
-    env.close()
+    envs.close()
     torch.save(policy_net.state_dict(), "trained_model.pth")
     print("Training completed. Model saved as trained_model.pth")
 

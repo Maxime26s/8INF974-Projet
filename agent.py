@@ -3,7 +3,7 @@ import random
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from replay import Transition, ReplayMemory
+from memory import Transition, ReplayMemory
 
 EPS_START = 0.9
 EPS_END = 0.05
@@ -33,24 +33,27 @@ class DQNAgent:
         self.memory = ReplayMemory(10000)
         self.optimizer = optim.AdamW(policy_net.parameters(), lr=lr, amsgrad=True)
 
-    def act(self, state):
+    def act(self, observations):
         sample = random.random()
         eps_threshold = EPS_END + (EPS_START - EPS_END) * math.exp(
             -1.0 * self.steps_done / EPS_DECAY
         )
         self.steps_done += 1
         if sample > eps_threshold:
-            return self.predict(state)
+            return self.predict(observations)
         else:
             return torch.tensor(
-                [[random.randrange(self.n_actions)]],
+                [
+                    [random.randrange(self.n_actions)]
+                    for _ in range(observations.size(0))
+                ],
                 device=self.device,
                 dtype=torch.long,
             )
 
-    def predict(self, state):
+    def predict(self, states):
         with torch.no_grad():
-            return self.policy_net(state).max(1).indices.view(1, 1)
+            return self.policy_net(states).max(1).indices.view(-1, 1)
 
     def remember(self, *args):
         self.memory.push(*args)
@@ -61,24 +64,45 @@ class DQNAgent:
         transitions = self.memory.sample(batch_size)
         batch = Transition(*zip(*transitions))
 
-        non_final_mask = torch.tensor(
-            tuple(map(lambda s: s is not None, batch.next_state)),
-            device=self.device,
-            dtype=torch.bool,
-        )
-        non_final_next_states = torch.cat(
-            [s for s in batch.next_state if s is not None]
-        )
         state_batch = torch.cat(batch.state)
         action_batch = torch.cat(batch.action)
         reward_batch = torch.cat(batch.reward)
+        next_state_batch = torch.cat(batch.next_state)
+
+        print("next_state_batch shape:", reward_batch.shape)
+
+        non_final_mask = next_state_batch.sum() != 0
+        non_final_next_states = next_state_batch[non_final_mask]
+
+        print(f"Intended non-final states count: {non_final_mask.sum().item()}")
+        print(f"Actual non-final next states count: {non_final_next_states.size(0)}")
+
+        if non_final_next_states.size(0) != non_final_mask.sum():
+            raise Exception("Non-final states count mismatch!")
 
         state_action_values = self.policy_net(state_batch).gather(1, action_batch)
         next_state_values = torch.zeros(batch_size, device=self.device)
-        with torch.no_grad():
-            next_state_values[non_final_mask] = (
-                self.target_net(non_final_next_states).max(1).values
-            )
+
+        print(f"Batch size: {batch_size}")
+        print(f"next_state_values shape: {next_state_values.shape}")
+        print(f"non_final_mask shape (True count): {non_final_mask.sum()}")
+        print(
+            f"Shape of target network output: {self.target_net(non_final_next_states).max(1).values.shape}"
+        )
+
+        print(
+            f"Non-final next states shape: {non_final_next_states.shape}"
+        )  # Debugging line
+
+        if non_final_next_states.size(0) > 0:
+            with torch.no_grad():
+                temp_values = self.target_net(non_final_next_states).max(1).values
+                print(f"Temp values shape: {temp_values.shape}")  # Debugging line
+                if temp_values.shape[0] != non_final_mask.sum():
+                    print("Mismatch detected")
+                    raise ValueError("Shape mismatch in DQN target calculation.")
+                next_state_values[non_final_mask] = temp_values
+
         expected_state_action_values = (next_state_values * self.gamma) + reward_batch
 
         criterion = nn.SmoothL1Loss()
