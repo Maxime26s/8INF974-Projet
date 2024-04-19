@@ -61,6 +61,10 @@ class DQNAgent:
         transitions = self.memory.sample(batch_size)
         batch = Transition(*zip(*transitions))
 
+        state_batch = torch.cat(batch.state)
+        action_batch = torch.cat(batch.action)
+        reward_batch = torch.cat(batch.reward)
+
         non_final_mask = torch.tensor(
             tuple(map(lambda s: s is not None, batch.next_state)),
             device=self.device,
@@ -69,9 +73,6 @@ class DQNAgent:
         non_final_next_states = torch.cat(
             [s for s in batch.next_state if s is not None]
         )
-        state_batch = torch.cat(batch.state)
-        action_batch = torch.cat(batch.action)
-        reward_batch = torch.cat(batch.reward)
 
         state_action_values = self.policy_net(state_batch).gather(1, action_batch)
         next_state_values = torch.zeros(batch_size, device=self.device)
