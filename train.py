@@ -3,7 +3,7 @@ import torch.optim as optim
 import torch.nn as nn
 from dqn_model import DQN
 from agent import DQNAgent
-from replay import ReplayMemory, Transition
+from memory import ReplayMemory, Transition
 from utils import plot_durations
 import math
 import gymnasium as gym
@@ -30,9 +30,9 @@ def convert_to_tensor(data, device):
 
 def setup_env(game, render_mode=None):
     env = gym.make(game, render_mode=render_mode)
-    state, _ = env.reset(seed=42)
+    obseration_shape = env.observation_space.shape
 
-    if len(state.shape) > 1:
+    if len(obseration_shape) > 1:
         env = gym.wrappers.GrayScaleObservation(env)
         env = gym.wrappers.ResizeObservation(env, shape=84)
         env = gym.wrappers.TransformObservation(env, lambda obs: obs / 255.0)
@@ -41,9 +41,9 @@ def setup_env(game, render_mode=None):
     return env
 
 
-def setup_model(state_shape, n_actions):
-    policy_net = DQN(state_shape, n_actions).to(device)
-    target_net = DQN(state_shape, n_actions).to(device)
+def setup_model(observation_shape, n_actions):
+    policy_net = DQN(observation_shape, n_actions).to(device)
+    target_net = DQN(observation_shape, n_actions).to(device)
     return policy_net, target_net
 
 
@@ -53,19 +53,19 @@ def perform_action(env, action):
     done = terminated or truncated
 
     if terminated:
-        next_state = None
+        next_observation = None
     else:
-        next_state = convert_to_tensor(observation, device=device)
+        next_observation = convert_to_tensor(observation, device=device)
 
-    return next_state, reward, done
+    return next_observation, reward, done
 
 
 def train_dqn(game, render_mode=None):
     env = setup_env(game, render_mode)
     n_actions = env.action_space.n
-    state, _ = env.reset(seed=42)
+    observation_shape = env.observation_space.shape
 
-    policy_net, target_net = setup_model(state.shape, n_actions)
+    policy_net, target_net = setup_model(observation_shape, n_actions)
     target_net.load_state_dict(policy_net.state_dict())
 
     agent = DQNAgent(policy_net, target_net, n_actions, device)
@@ -75,16 +75,16 @@ def train_dqn(game, render_mode=None):
     num_episodes = 600 if torch.cuda.is_available() else 50
 
     for episode in range(num_episodes):
-        state, _ = env.reset(seed=42)
-        state = convert_to_tensor(state, device=device)
+        observation, _ = env.reset(seed=42)
+        observation = convert_to_tensor(observation, device=device)
 
         for frame in count():
-            action = agent.act(state)
-            next_state, reward, done = perform_action(env, action)
+            action = agent.act(observation)
+            next_observation, reward, done = perform_action(env, action)
 
-            agent.remember(state, action, next_state, reward)
+            agent.remember(observation, action, next_observation, reward)
 
-            state = next_state
+            observation = next_observation
 
             agent.replay(BATCH_SIZE)
             agent.update_target()
@@ -108,21 +108,21 @@ def train_dqn(game, render_mode=None):
 def test_dqn(game, model_path, num_episodes=10):
     env = setup_env(game, "human")
     n_actions = env.action_space.n
-    state, _ = env.reset(seed=42)
+    observation = env.observation_space.shape
 
-    policy_net, _ = setup_model(state.shape, n_actions)
+    policy_net, _ = setup_model(observation.shape, n_actions)
     policy_net.load_state_dict(torch.load(model_path))
 
     agent = DQNAgent(policy_net, policy_net, n_actions, device)
 
     for episode in range(num_episodes):
-        state, _ = env.reset()
-        state = convert_to_tensor(state, device=device)
+        observation, _ = env.reset()
+        observation = convert_to_tensor(observation, device=device)
 
         total_reward = 0
         for frame in count():
-            action = agent.predict(state)
-            state, reward, done = perform_action(env, action)
+            action = agent.predict(observation)
+            observation, reward, done = perform_action(env, action)
 
             total_reward += reward.item()
 
