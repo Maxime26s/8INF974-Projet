@@ -26,6 +26,7 @@ class DQNAgent:
         memory_type="regular",
         alpha=0.6,  # Priority exponent
         beta=0.4,  # Importance-sampling exponent
+        use_double_dqn=True,
     ):
         self.policy_net = policy_net
         self.target_net = target_net
@@ -34,6 +35,7 @@ class DQNAgent:
         self.gamma = gamma
         self.tau = tau
         self.epsilon = epsilon
+        self.use_double_dqn = use_double_dqn
         self.steps_done = 0
         if memory_type == "prioritized":
             self.memory = PrioritizedReplayMemory(10000, alpha=alpha)
@@ -93,10 +95,23 @@ class DQNAgent:
 
         state_action_values = self.policy_net(state_batch).gather(1, action_batch)
         next_state_values = torch.zeros(batch_size, device=self.device)
+
         with torch.no_grad():
-            next_state_values[non_final_mask] = (
-                self.target_net(non_final_next_states).max(1).values
-            )
+            if self.use_double_dqn:
+                if non_final_mask.sum() > 0:
+                    best_next_actions = (
+                        self.policy_net(non_final_next_states).max(1)[1].unsqueeze(1)
+                    )
+                    next_state_values[non_final_mask] = (
+                        self.target_net(non_final_next_states)
+                        .gather(1, best_next_actions)
+                        .squeeze()
+                    )
+            else:
+                next_state_values[non_final_mask] = (
+                    self.target_net(non_final_next_states).max(1).values
+                )
+
         expected_state_action_values = (next_state_values * self.gamma) + reward_batch
 
         if isinstance(self.memory, PrioritizedReplayMemory):
