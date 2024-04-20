@@ -5,11 +5,6 @@ import torch.nn as nn
 import torch.optim as optim
 from memory import Transition, ReplayMemory
 from prioritized_memory import PrioritizedReplayMemory
-import numpy as np
-
-EPS_START = 0.9
-EPS_END = 0.05
-EPS_DECAY = 1000
 
 
 class DQNAgent:
@@ -22,8 +17,11 @@ class DQNAgent:
         lr=1e-4,
         gamma=0.99,
         tau=0.005,
-        epsilon=0.9,
+        epsilon_start=0.9,
+        epsilon_end=0.9,
+        epsilon_decay=0.9,
         memory_type="regular",
+        memory_capacity=10000,
         alpha=0.6,  # Priority exponent
         beta=0.4,  # Importance-sampling exponent
         use_double_dqn=True,
@@ -34,21 +32,23 @@ class DQNAgent:
         self.device = device
         self.gamma = gamma
         self.tau = tau
-        self.epsilon = epsilon
+        self.epsilon_start = epsilon_start
+        self.epsilon_end = epsilon_end
+        self.epsilon_decay = epsilon_decay
         self.use_double_dqn = use_double_dqn
         self.steps_done = 0
         if memory_type == "prioritized":
-            self.memory = PrioritizedReplayMemory(10000, alpha=alpha)
+            self.memory = PrioritizedReplayMemory(memory_capacity, alpha=alpha)
             self.beta = beta
         else:
-            self.memory = ReplayMemory(10000)
+            self.memory = ReplayMemory(memory_capacity)
         self.optimizer = optim.AdamW(policy_net.parameters(), lr=lr, amsgrad=True)
 
     def act(self, state):
         sample = random.random()
-        eps_threshold = EPS_END + (EPS_START - EPS_END) * math.exp(
-            -1.0 * self.steps_done / EPS_DECAY
-        )
+        eps_threshold = self.epsilon_end + (
+            self.epsilon_start - self.epsilon_end
+        ) * math.exp(-1.0 * self.steps_done / self.epsilon_decay)
         self.steps_done += 1
         if sample > eps_threshold:
             return self.predict(state)

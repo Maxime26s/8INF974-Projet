@@ -1,5 +1,4 @@
-from collections import namedtuple, deque
-import random
+from collections import namedtuple
 import numpy as np
 
 Transition = namedtuple("Transition", ("state", "action", "next_state", "reward"))
