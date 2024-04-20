@@ -20,11 +20,11 @@ class DQNAgent:
         epsilon_start=0.9,
         epsilon_end=0.05,
         epsilon_decay=1000,
-        memory_type="regular",
+        use_double_dqn=False,
+        use_prioritized_memory=False,
         memory_capacity=10000,
         alpha=0.6,  # Priority exponent
         beta=0.4,  # Importance-sampling exponent
-        use_double_dqn=True,
     ):
         self.policy_net = policy_net
         self.target_net = target_net
@@ -37,18 +37,24 @@ class DQNAgent:
         self.epsilon_decay = epsilon_decay
         self.use_double_dqn = use_double_dqn
         self.steps_done = 0
-        if memory_type == "prioritized":
+        if use_prioritized_memory:
             self.memory = PrioritizedReplayMemory(memory_capacity, alpha=alpha)
             self.beta = beta
         else:
             self.memory = ReplayMemory(memory_capacity)
         self.optimizer = optim.AdamW(policy_net.parameters(), lr=lr, amsgrad=True)
 
-    def act(self, state):
-        sample = random.random()
+        self.loss_history = []
+
+    def get_epsilon(self):
         eps_threshold = self.epsilon_end + (
             self.epsilon_start - self.epsilon_end
         ) * math.exp(-1.0 * self.steps_done / self.epsilon_decay)
+        return eps_threshold
+
+    def act(self, state):
+        sample = random.random()
+        eps_threshold = self.get_epsilon()
         self.steps_done += 1
         if sample > eps_threshold:
             return self.predict(state)
@@ -133,6 +139,8 @@ class DQNAgent:
         loss.backward()
         torch.nn.utils.clip_grad_value_(self.policy_net.parameters(), 1)
         self.optimizer.step()
+
+        return loss.item()
 
     def update_target(self):
         target_net_state_dict = self.target_net.state_dict()

@@ -1,6 +1,8 @@
 import argparse
 import torch
 from train import train_dqn, test_dqn
+import numpy as np
+import random
 
 
 def main(game, mode, render_mode):
@@ -9,10 +11,24 @@ def main(game, mode, render_mode):
     else:
         print("CUDA is not available. Using CPU.")
 
+    torch.manual_seed(42)
+    np.random.seed(42)
+    random.seed(42)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(42)
+
     # game = "PongNoFrameskip-v4"
 
     if mode == "train":
-        train_dqn(game=game, render_mode=render_mode)
+        num_episodes = 600 if torch.cuda.is_available() else 50
+
+        train_dqn(
+            game=game,
+            render_mode=render_mode,
+            num_episodes=num_episodes,
+            use_double_dqn=True,
+            use_prioritized_memory=True,
+        )
     elif mode == "test":
         test_dqn(game=game, model_path="trained_model.pth", num_episodes=100)
 

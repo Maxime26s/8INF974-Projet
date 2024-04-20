@@ -1,7 +1,7 @@
 import torch
 from dqn_model import DQN
 from agent import DQNAgent
-from utils import plot_durations
+from utils import plot_metrics, initialize_metrics_csv, append_metrics_to_csv
 import gymnasium as gym
 from itertools import count
 import matplotlib.pyplot as plt
@@ -57,7 +57,14 @@ def perform_action(env, action):
     return next_observation, reward, done
 
 
-def train_dqn(game, render_mode=None, save_interval=100):
+def train_dqn(
+    game,
+    render_mode=None,
+    num_episodes=100,
+    use_double_dqn=False,
+    use_prioritized_memory=False,
+    save_interval=100,
+):
     env = setup_env(game, render_mode)
     n_actions = env.action_space.n
     observation_shape = env.observation_space.shape
@@ -66,23 +73,32 @@ def train_dqn(game, render_mode=None, save_interval=100):
     target_net.load_state_dict(policy_net.state_dict())
 
     agent = DQNAgent(
-        policy_net, target_net, n_actions, device, memory_type="prioritized"
+        policy_net,
+        target_net,
+        n_actions,
+        device,
+        use_double_dqn=use_double_dqn,
+        use_prioritized_memory=use_prioritized_memory,
     )
 
     episode_durations = []
     episode_rewards = []
+    episode_average_loss = []
 
-    num_episodes = 600 if torch.cuda.is_available() else 50
-
+    model_type = "DDQN" if use_double_dqn else "DQN"
+    memory_type = "PrioritizedMemory" if use_prioritized_memory else "StandardMemory"
     session_timestamp = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
-    session_dir = f"./{game}/{session_timestamp}"
+    session_dir = f"./{game}/{model_type}/{memory_type}/{session_timestamp}"
     os.makedirs(session_dir, exist_ok=True)
+
+    metrics_path = initialize_metrics_csv(session_dir)
 
     for episode in range(num_episodes):
         observation, _ = env.reset(seed=42)
         observation = convert_to_tensor(observation, device=device)
 
         total_reward = 0
+        losses = []
 
         for frame in count():
             action = agent.act(observation)
@@ -93,15 +109,30 @@ def train_dqn(game, render_mode=None, save_interval=100):
 
             observation = next_observation
 
-            agent.replay(BATCH_SIZE)
+            loss = agent.replay(BATCH_SIZE)
+            if loss is not None:
+                losses.append(loss)
+
             agent.update_target()
 
             if done:
-                print(f"Episode: {episode + 1}, Total reward: {total_reward}")
-
                 episode_durations.append(frame + 1)
                 episode_rewards.append(total_reward)
-                plot_durations(episode_durations)
+                episode_average_loss.append(np.mean(losses) if losses else 0)
+
+                print(
+                    f"Episode: {episode + 1}, Total reward: {total_reward}, Average Loss: {episode_average_loss[-1]}"
+                )
+
+                append_metrics_to_csv(
+                    metrics_path,
+                    episode + 1,
+                    episode_durations[-1],
+                    total_reward,
+                    episode_average_loss[-1],
+                )
+
+                plot_metrics(episode_durations, episode_rewards, episode_average_loss)
                 break
 
         if (episode + 1) % save_interval == 0:
@@ -115,7 +146,9 @@ def train_dqn(game, render_mode=None, save_interval=100):
     torch.save(policy_net.state_dict(), final_model_path)
     print(f"Final model saved as {final_model_path}")
 
-    plot_durations(episode_durations, show_result=True)
+    plot_metrics(
+        episode_durations, episode_rewards, episode_average_loss, show_result=True
+    )
     plt.ioff()
     plt.show()
 
@@ -130,20 +163,21 @@ def test_dqn(game, model_path, num_episodes=10):
 
     agent = DQNAgent(policy_net, policy_net, n_actions, device)
 
-    for episode in range(num_episodes):
-        observation, _ = env.reset()
-        observation = convert_to_tensor(observation, device=device)
+    with torch.no_grad():
+        for episode in range(num_episodes):
+            observation, _ = env.reset()
+            observation = convert_to_tensor(observation, device=device)
 
-        total_reward = 0
-        for frame in count():
-            action = agent.predict(observation)
-            observation, reward, done = perform_action(env, action)
+            total_reward = 0
+            for frame in count():
+                action = agent.predict(observation)
+                observation, reward, done = perform_action(env, action)
 
-            total_reward += reward.item()
+                total_reward += reward.item()
 
-            if done:
-                print(f"Episode: {episode + 1}, Total reward: {total_reward}")
-                break
+                if done:
+                    print(f"Episode: {episode + 1}, Total reward: {total_reward}")
+                    break
 
     env.close()
 
