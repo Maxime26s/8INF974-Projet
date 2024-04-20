@@ -18,8 +18,8 @@ class DQNAgent:
         gamma=0.99,
         tau=0.005,
         epsilon_start=0.9,
-        epsilon_end=0.9,
-        epsilon_decay=0.9,
+        epsilon_end=0.05,
+        epsilon_decay=1000,
         memory_type="regular",
         memory_capacity=10000,
         alpha=0.6,  # Priority exponent
