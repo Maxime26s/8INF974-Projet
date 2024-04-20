@@ -1,16 +1,13 @@
 import torch
-import torch.optim as optim
-import torch.nn as nn
 from dqn_model import DQN
 from agent import DQNAgent
-from memory import ReplayMemory, Transition
 from utils import plot_durations
-import math
 import gymnasium as gym
-import random
 from itertools import count
 import matplotlib.pyplot as plt
 import numpy as np
+import datetime
+import os
 
 BATCH_SIZE = 128
 
@@ -60,7 +57,7 @@ def perform_action(env, action):
     return next_observation, reward, done
 
 
-def train_dqn(game, render_mode=None):
+def train_dqn(game, render_mode=None, save_interval=100):
     env = setup_env(game, render_mode)
     n_actions = env.action_space.n
     observation_shape = env.observation_space.shape
@@ -71,16 +68,24 @@ def train_dqn(game, render_mode=None):
     agent = DQNAgent(policy_net, target_net, n_actions, device)
 
     episode_durations = []
+    episode_rewards = []
 
     num_episodes = 600 if torch.cuda.is_available() else 50
+
+    session_timestamp = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
+    session_dir = f"./{game}/{session_timestamp}"
+    os.makedirs(session_dir, exist_ok=True)
 
     for episode in range(num_episodes):
         observation, _ = env.reset(seed=42)
         observation = convert_to_tensor(observation, device=device)
 
+        total_reward = 0
+
         for frame in count():
             action = agent.act(observation)
             next_observation, reward, done = perform_action(env, action)
+            total_reward += reward.item()
 
             agent.remember(observation, action, next_observation, reward)
 
@@ -90,15 +95,23 @@ def train_dqn(game, render_mode=None):
             agent.update_target()
 
             if done:
-                print(f"Episode: {episode + 1}")
+                print(f"Episode: {episode + 1}, Total reward: {total_reward}")
 
                 episode_durations.append(frame + 1)
+                episode_rewards.append(total_reward)
                 plot_durations(episode_durations)
                 break
 
+        if (episode + 1) % save_interval == 0:
+            model_path = f"{session_dir}/{episode+1}.pth"
+            torch.save(policy_net.state_dict(), model_path)
+            print(f"Model saved at {model_path}")
+
     env.close()
-    torch.save(policy_net.state_dict(), "trained_model.pth")
-    print("Training completed. Model saved as trained_model.pth")
+    print("Training completed.")
+    final_model_path = f"{session_dir}/final_model.pth"
+    torch.save(policy_net.state_dict(), final_model_path)
+    print(f"Final model saved as {final_model_path}")
 
     plot_durations(episode_durations, show_result=True)
     plt.ioff()
