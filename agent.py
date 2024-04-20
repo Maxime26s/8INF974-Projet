@@ -4,6 +4,8 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from memory import Transition, ReplayMemory
+from prioritized_memory import PrioritizedReplayMemory
+import numpy as np
 
 EPS_START = 0.9
 EPS_END = 0.05
@@ -21,6 +23,9 @@ class DQNAgent:
         gamma=0.99,
         tau=0.005,
         epsilon=0.9,
+        memory_type="regular",
+        alpha=0.6,  # Priority exponent
+        beta=0.4,  # Importance-sampling exponent
     ):
         self.policy_net = policy_net
         self.target_net = target_net
@@ -30,7 +35,11 @@ class DQNAgent:
         self.tau = tau
         self.epsilon = epsilon
         self.steps_done = 0
-        self.memory = ReplayMemory(10000)
+        if memory_type == "prioritized":
+            self.memory = PrioritizedReplayMemory(10000, alpha=alpha)
+            self.beta = beta
+        else:
+            self.memory = ReplayMemory(10000)
         self.optimizer = optim.AdamW(policy_net.parameters(), lr=lr, amsgrad=True)
 
     def act(self, state):
@@ -58,7 +67,15 @@ class DQNAgent:
     def replay(self, batch_size):
         if len(self.memory) < batch_size:
             return
-        transitions = self.memory.sample(batch_size)
+
+        if isinstance(self.memory, PrioritizedReplayMemory):
+            transitions, indices, weights = self.memory.sample(
+                batch_size, beta=self.beta
+            )
+            weights = torch.tensor(weights, device=self.device, dtype=torch.float32)
+        else:
+            transitions = self.memory.sample(batch_size)
+
         batch = Transition(*zip(*transitions))
 
         state_batch = torch.cat(batch.state)
@@ -82,8 +99,21 @@ class DQNAgent:
             )
         expected_state_action_values = (next_state_values * self.gamma) + reward_batch
 
-        criterion = nn.SmoothL1Loss()
-        loss = criterion(state_action_values, expected_state_action_values.unsqueeze(1))
+        if isinstance(self.memory, PrioritizedReplayMemory):
+            criterion = nn.SmoothL1Loss(reduction="none")
+            losses = criterion(
+                state_action_values, expected_state_action_values.unsqueeze(1)
+            ).squeeze()
+            weighted_losses = losses * weights
+            loss = weighted_losses.mean()
+            errors = losses.detach().abs().cpu().numpy()
+            self.memory.update_priorities(indices, errors)
+        else:
+            criterion = nn.SmoothL1Loss()
+            loss = criterion(
+                state_action_values, expected_state_action_values.unsqueeze(1)
+            )
+
         self.optimizer.zero_grad()
         loss.backward()
         torch.nn.utils.clip_grad_value_(self.policy_net.parameters(), 1)

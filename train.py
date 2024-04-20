@@ -65,7 +65,9 @@ def train_dqn(game, render_mode=None, save_interval=100):
     policy_net, target_net = setup_model(observation_shape, n_actions)
     target_net.load_state_dict(policy_net.state_dict())
 
-    agent = DQNAgent(policy_net, target_net, n_actions, device)
+    agent = DQNAgent(
+        policy_net, target_net, n_actions, device, memory_type="prioritized"
+    )
 
     episode_durations = []
     episode_rewards = []
