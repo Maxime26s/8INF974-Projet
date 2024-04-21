@@ -79,4 +79,4 @@ files = [
 print(files)
 
 for file in files:
-    group_and_plot_epochs(join(result_folder, file), 10)
+    group_and_plot_epochs(os.path.join(result_folder, file), 10)
