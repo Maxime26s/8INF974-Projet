@@ -24,6 +24,7 @@ def plot_metrics(
     plt.title("Episode Durations")
     plt.xlabel("Episode")
     plt.ylabel("Duration")
+    plt.xlim(left=0)
     plt.plot(durations_t.numpy())
     if len(durations_t) >= 100:
         means = durations_t.unfold(0, 100, 1).mean(1).view(-1)
@@ -36,6 +37,7 @@ def plot_metrics(
     plt.title("Rewards per Episode")
     plt.xlabel("Episode")
     plt.ylabel("Reward")
+    plt.xlim(left=0)
     plt.plot(rewards_t.numpy())
     if len(rewards_t) >= 100:
         means = rewards_t.unfold(0, 100, 1).mean(1).view(-1)
@@ -48,6 +50,7 @@ def plot_metrics(
     plt.title("Loss per Episode")
     plt.xlabel("Episode")
     plt.ylabel("Loss")
+    plt.xlim(left=0)
     plt.plot(losses_t.numpy())
     if len(losses_t) >= 100:
         means = losses_t.unfold(0, 100, 1).mean(1).view(-1)

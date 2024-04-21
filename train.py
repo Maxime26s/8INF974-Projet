@@ -30,10 +30,13 @@ def setup_env(game, render_mode=None):
     obseration_shape = env.observation_space.shape
 
     if len(obseration_shape) > 1:
+        print("Preprocessing for image-based observation space")
         env = gym.wrappers.GrayScaleObservation(env)
         env = gym.wrappers.ResizeObservation(env, shape=84)
         env = gym.wrappers.TransformObservation(env, lambda obs: obs / 255.0)
         env = gym.wrappers.FrameStack(env, 4)
+    else:
+        print("Preprocessing for vector-based observation space")
 
     return env
 
@@ -64,6 +67,7 @@ def train_dqn(
     use_double_dqn=False,
     use_prioritized_memory=False,
     save_interval=100,
+    should_plot=True,
 ):
     env = setup_env(game, render_mode)
     n_actions = env.action_space.n
@@ -132,7 +136,10 @@ def train_dqn(
                     episode_average_loss[-1],
                 )
 
-                plot_metrics(episode_durations, episode_rewards, episode_average_loss)
+                if should_plot:
+                    plot_metrics(
+                        episode_durations, episode_rewards, episode_average_loss
+                    )
                 break
 
         if (episode + 1) % save_interval == 0:
@@ -146,11 +153,12 @@ def train_dqn(
     torch.save(policy_net.state_dict(), final_model_path)
     print(f"Final model saved as {final_model_path}")
 
-    plot_metrics(
-        episode_durations, episode_rewards, episode_average_loss, show_result=True
-    )
-    plt.ioff()
-    plt.show()
+    if should_plot:
+        plot_metrics(
+            episode_durations, episode_rewards, episode_average_loss, show_result=True
+        )
+        plt.ioff()
+        plt.show()
 
 
 def test_dqn(game, model_path, num_episodes=10):
