@@ -160,4 +160,8 @@ cython_debug/
 #.idea/
 
 *.pth
-*.csv
+
+# acrobot, cartpole and mountaincar folders
+Acrobot-v1/
+CartPole-v1/
+MountainCar-v0/
