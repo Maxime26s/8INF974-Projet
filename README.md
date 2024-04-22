@@ -34,11 +34,11 @@ Pour lancer et utiliser l'application, suivez ces étapes :
    - Pour tester : `--mode test`
    - Pour le benchmark : `--mode benchmark`
 
-    Pour le mode `test`, vous devez spécifier le chemin du modèle à tester dans le script `__main__.py`. De plus, assurez-vous d'utiliser le même environnement que celui utilisé pour l'entraînement.
+    Pour le mode `test`, vous devez spécifier le *path* du modèle à tester dans le script `__main__.py`. De plus, assurez-vous d'utiliser le même environnement que celui utilisé pour l'entraînement.
 
 3. Configuration avancée
 
-    Modifiez les hyperparamètres spécifiques à chaque environnement dans la classe DQNAgent pour ajuster la taille de mémoire, la taille du lot, le taux d'apprentissage, etc.
+    Modifiez les hyperparamètres dans la classe `DQNAgent` pour ajuster la taille de mémoire, la taille du lot, le taux d'apprentissage, etc.
 
 4. Visualisation des résultats
 
